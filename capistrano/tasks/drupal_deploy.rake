@@ -5,7 +5,7 @@ namespace :deploy do
   task :composer do
     set :do_composer, ask('¿Want to do composer install (drupal)?:y/n','y')
     if fetch(:do_composer)=='y'
-      #SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
+      SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
       on roles(:web) do
         within release_path.join(fetch(:app_path)) do
           execute :composer, 'install --prefer-dist --no-interaction --quiet --optimize-autoloader'

@@ -27,7 +27,7 @@ Rake::Task['deploy:reverted'].prerequisites.delete('composer:install')
 # See https://github.com/capistrano/composer/issues/22
 
 SSHKit.config.command_map[:drush] = "drush"
-SSHKit.config.command_map[:composer] = "composer"
+#SSHKit.config.command_map[:composer] = "composer"
 
 # Default value for default_env is {}
 # set :default_env, { path: "/opt/ruby/bin:$PATH" }
