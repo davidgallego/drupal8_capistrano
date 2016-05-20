@@ -5,6 +5,9 @@ namespace :deploy do
   task :composer do
     set :do_composer, ask('¿Want to do composer install (drupal)?:y/n','y')
     if fetch(:do_composer)=='y'
+      if not test "[ -f #{(fetch(:deploy_to))}/shared/composer.phar ]"
+        invoke 'composer:install_executable'  
+      end
       SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
       on roles(:web) do
         within release_path.join(fetch(:app_path)) do
@@ -29,18 +32,20 @@ end
 namespace :drupal do
 
   desc "Restore MySQL Database"
-  task :mysqlrestore, :roles => :app do
-    backups = capture("ls -1 #{(fetch(:deploy_to))}/backups/").split("\n")
-    default_backup = backups.last
-    puts "Available backups: "
-    puts backups
-    backup = Capistrano::CLI.ui.ask "Which backup would you like to restore? [#{default_backup}] "
-    backup_file = default_backup if backup.empty?
-    within release_path.join(fetch(:app_path)) do
-      set :mysql_connect, capture(:drush,'sql-connect')
+  task :mysqlrestore do
+    on roles(:app) do
+      backups = capture("ls -1 #{(fetch(:deploy_to))}/backups/").split("\n")
+      default_backup = backups.last
+      puts "Available backups: "
+      puts backups
+      backup = Capistrano::CLI.ui.ask "Which backup would you like to restore? [#{default_backup}] "
+      backup_file = default_backup if backup.empty?
+      within release_path.join(fetch(:app_path)) do
+        set :mysql_connect, capture(:drush,'sql-connect')
+      end
+      execute("zcat #{fetch(:deploy_to)}/backups/#{fetch(:last_db_dump)} | #{fetch(:mysql_connect)}")
+      ##run "#{fetch(:mysql_connect)} < #{(fetch(:deploy_to))}/backups/#{backup_file}"
     end
-    execute("zcat #{fetch(:deploy_to)}/backups/#{fetch(:last_db_dump)} | #{fetch(:mysql_connect)}")
-    ##run "#{fetch(:mysql_connect)} < #{(fetch(:deploy_to))}/backups/#{backup_file}"
   end
 
 
