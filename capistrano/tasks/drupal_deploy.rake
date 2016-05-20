@@ -5,7 +5,7 @@ namespace :deploy do
   task :composer do
     set :do_composer, ask('¿Want to do composer install (drupal)?:y/n','y')
     if fetch(:do_composer)=='y'
-      SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
+      #SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
       on roles(:web) do
         within release_path.join(fetch(:app_path)) do
           execute :composer, 'install --prefer-dist --no-interaction --quiet --optimize-autoloader'
@@ -28,14 +28,30 @@ end
 # Specific Drupal tasks
 namespace :drupal do
 
+  desc "Restore MySQL Database"
+  task :mysqlrestore, :roles => :app do
+    backups = capture("ls -1 #{(fetch(:deploy_to))}/backups/").split("\n")
+    default_backup = backups.last
+    puts "Available backups: "
+    puts backups
+    backup = Capistrano::CLI.ui.ask "Which backup would you like to restore? [#{default_backup}] "
+    backup_file = default_backup if backup.empty?
+    within release_path.join(fetch(:app_path)) do
+      set :mysql_connect, capture(:drush,'sql-connect')
+    end
+    execute("zcat #{fetch(:deploy_to)}/backups/#{fetch(:last_db_dump)} | #{fetch(:mysql_connect)}")
+    ##run "#{fetch(:mysql_connect)} < #{(fetch(:deploy_to))}/backups/#{backup_file}"
+  end
+
+
   desc 'Create database dump'
   task :dump do
-    on roles(:db) do
+    on roles(:app) do
       within release_path.join(fetch(:app_path)) do
         if not test "[ -d #{(fetch(:deploy_to))}/backups ]"
           execute :mkdir, "#{(fetch(:deploy_to))}/backups"
         end
-        execute :drush, "sql-dump --result-file=#{(fetch(:deploy_to))}/backups/#{fetch(:current_revision)}.sql --gzip"
+        execute :drush, "sql-dump --result-file=#{(fetch(:deploy_to))}/backups/#{release_name}.sql --gzip"
       end
     end
   end
@@ -60,13 +76,10 @@ namespace :drupal do
   desc 'Revert database dump'
   task :revertdump do
     on roles(:db) do
-      set :last_db_dump, capture("ls -Art #{fetch(:deploy_to)}/backups/ | tail -n 1")
-      within release_path.join(fetch(:app_path)) do
-        set :mysql_connect, capture(:drush,'sql-connect')
-
+      set :do_revert, ask('¿Want to do revert database?:y/n','n')
+      if fetch(:do_revert)=='y'
+        invoke 'drupal:mysqlrestore'
       end
-      execute("zcat #{fetch(:deploy_to)}/backups/#{fetch(:last_db_dump)} | #{fetch(:mysql_connect)}")
-      execute("rm #{fetch(:deploy_to)}/backups/#{fetch(:last_db_dump)}")
     end
   end
 
