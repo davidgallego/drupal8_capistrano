@@ -7,13 +7,16 @@ set :application, 'app_name'
 set :repo_url, 'git@example.com:path/to/repo/reponame.git'
 
 # Path to the drupal directory, default to app.
-set :app_path,        "/path/to/drupal/dir"
+set :app_path,        "path/to/drupal/dir"
 
 # Default value for :linked_files is []
 set :linked_files, fetch(:linked_files, []).push("#{fetch(:app_path)}/sites/default/settings.local.php")
 
 # Default value for linked_dirs is []
 set :linked_dirs, fetch(:linked_dirs, []).push("#{fetch(:app_path)}/sites/default/files", "#{fetch(:app_path)}/private-files")
+
+#Directorios que pueden ser copiados entre releases si no se realiza el composer install
+set :copy_dirs, fetch(:copy_dirs, []).push("vendor","drush/contrib","#{fetch(:app_path)}/core", "#{fetch(:app_path)}/modules/contrib", "#{fetch(:app_path)}/themes/contrib", "#{fetch(:app_path)}/profiles/contrib")
 
 #Composer and drush need to be mapped
 
@@ -26,7 +29,6 @@ Rake::Task['deploy:reverted'].prerequisites.delete('composer:install')
 # you have to copy those line for each <stage_name>.rb
 # See https://github.com/capistrano/composer/issues/22
 
-SSHKit.config.command_map[:drush] = "drush"
 #SSHKit.config.command_map[:composer] = "composer"
 
 # Default value for default_env is {}
@@ -35,11 +37,20 @@ SSHKit.config.command_map[:drush] = "drush"
 # Default value for keep_releases is 5
 set :keep_releases, 3
 
+
+
+
+
 after 'deploy:updated', 'deploy:composer'
+after 'deploy:composer', 'drupal:drush_installed'
+after 'deploy:reverted', 'drupal:drush_installed'
+after 'deploy:reverted', 'drupal:revertdump'
 after 'deploy:updated', 'drupal:dump'
 after 'drupal:dump', 'drupal:config:remote_import'
-after 'drupal:config:remote_import', 'drupal:update:updatedb'
-after 'deploy:reverted', 'drupal:revertdump'
+after 'deploy:cleanup', 'drupal:cleanup_dump'
+
+##UNCOMMENT AFTER FIRST RELEASE
+#after 'drupal:config:remote_import', 'drupal:update:updatedb'
 
 namespace :deploy do
 

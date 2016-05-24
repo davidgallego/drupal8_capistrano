@@ -3,33 +3,62 @@ namespace :deploy do
 
   desc 'Composer install'
   task :composer do
-    set :do_composer, ask('¿Want to do composer install (drupal)?:y/n','y')
-    if fetch(:do_composer)=='y'
-      if not test "[ -f #{(fetch(:deploy_to))}/shared/composer.phar ]"
-        invoke 'composer:install_executable'  
+    #set :do_composer, ask('¿Want to do composer install (drupal)?:y/n','y')
+    #if fetch(:do_composer)=='y'
+      if not File.exists? "#{(fetch(:deploy_to))}/shared/composer.phar"
+        invoke 'composer:install_executable'
       end
       SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
       on roles(:web) do
-        within release_path.join(fetch(:app_path)) do
+        within release_path do
           execute :composer, 'install --prefer-dist --no-interaction --quiet --optimize-autoloader'
-          execute :rm, "-rf ../../../shared/#{(fetch(:app_path))}/core  ../../../shared/#{(fetch(:app_path))}/vendor"
-          #COPIAMOS PARA PROXIMOS DEPLOYS
-          execute :cp, "-a core vendor ../../../shared/#{(fetch(:app_path))}"
         end
       end
-    else
-      on roles(:web) do
-        within release_path.join(fetch(:app_path)) do
-          execute :cp, "-a ../../../shared/#{(fetch(:app_path))}/core ../../../shared/#{(fetch(:app_path))}/vendor ."
-        end
-      end
-    end
+    #else
+    #  on roles(:web) do
+    #    within release_path.join(fetch(:app_path)) do
+    #      releases = capture("ls -1 #{(fetch(:deploy_to))}/releases/").split("\n")
+    #      preLast = "#{(fetch(:deploy_to))}/releases/#{releases[-2]}/"
+    #      last = "#{(fetch(:deploy_to))}/releases/#{releases[-1]}/"
+    #      fetch(:copy_dirs).each do |dir|
+    #        if test "[ -d #{preLast}#{dir} ]"
+    #          target = "#{last}#{dir}"
+    #          source = "#{preLast}#{dir}"
+    #          execute :cp, "-a", source, target
+    #        else
+    #          if not File.exists? "#{(fetch(:deploy_to))}/shared/composer.phar"
+    #            invoke 'composer:install_executable'
+    #          end
+    #          SSHKit.config.command_map[:composer] = "#{shared_path.join("composer.phar")}"
+    #          on roles(:web) do
+    #            within release_path do
+    #              execute :composer, 'install --prefer-dist --no-interaction --quiet --optimize-autoloader'
+    #            end
+    #          end
+    #          break
+    #        end
+    #      end
+    #   end
+    #  end
+    #end
   end
 
 end
 
 # Specific Drupal tasks
 namespace :drupal do
+
+  desc "Check if drush is instaled"
+  task :drush_installed do
+    on roles(:app) do
+      set :last_release, capture("ls -Art #{fetch(:deploy_to)}/releases/ | tail -n 1")
+      if File.exists? "#{(fetch(:deploy_to))}/releases/#{(fetch(:last_release))}/vendor/drush/drush/drush"
+        SSHKit.config.command_map[:drush] = "#{(fetch(:deploy_to))}/releases/#{(fetch(:last_release))}/vendor/drush/drush/drush"
+      else
+        abort "ERROR: Drush is not properly installed"
+      end
+    end
+  end
 
   desc "Restore MySQL Database"
   task :mysqlrestore do
@@ -38,12 +67,12 @@ namespace :drupal do
       default_backup = backups.last
       puts "Available backups: "
       puts backups
-      backup = Capistrano::CLI.ui.ask "Which backup would you like to restore? [#{default_backup}] "
-      backup_file = default_backup if backup.empty?
+      set :backup, ask("Which backup would you like to restore? [#{default_backup}] ","#{default_backup}")
+      backup_file = fetch(:backup)
       within release_path.join(fetch(:app_path)) do
         set :mysql_connect, capture(:drush,'sql-connect')
       end
-      execute("zcat #{fetch(:deploy_to)}/backups/#{fetch(:last_db_dump)} | #{fetch(:mysql_connect)}")
+      execute("zcat #{fetch(:deploy_to)}/backups/#{backup_file} | #{fetch(:mysql_connect)}")
       ##run "#{fetch(:mysql_connect)} < #{(fetch(:deploy_to))}/backups/#{backup_file}"
     end
   end
@@ -52,11 +81,13 @@ namespace :drupal do
   desc 'Create database dump'
   task :dump do
     on roles(:app) do
-      within release_path.join(fetch(:app_path)) do
-        if not test "[ -d #{(fetch(:deploy_to))}/backups ]"
-          execute :mkdir, "#{(fetch(:deploy_to))}/backups"
+      if not test "[ -d #{(fetch(:deploy_to))}/backups ]"
+        execute :mkdir, "#{(fetch(:deploy_to))}/backups"
+      else
+        last_release = capture("ls -Art #{fetch(:deploy_to)}/releases/ | tail -n 1")
+        within release_path.join(fetch(:app_path)) do
+          execute :drush, "sql-dump --result-file=#{(fetch(:deploy_to))}/backups/#{last_release}.sql --gzip"
         end
-        execute :drush, "sql-dump --result-file=#{(fetch(:deploy_to))}/backups/#{release_name}.sql --gzip"
       end
     end
   end
@@ -74,6 +105,26 @@ namespace :drupal do
         output = %x[cd #{(fetch(:app_path))} && drush sql-connect]
         system("zcat #{fetch(:last_release)}.sql.gz | "+ output);
         system("rm #{fetch(:last_release)}.sql.gz")
+      end
+    end
+  end
+
+  desc "Clean up old dumps"
+  task :cleanup_dump do
+    on release_roles :all do |host|
+      backup_dir = "#{(fetch(:deploy_to))}/backups/"
+      releases = capture(:ls, "-xtr", backup_dir).split
+      if releases.count >= 5
+        #info t(:keeping_releases, host: host.to_s, keep_releases: 5, releases: releases.count)
+        directories = (releases - releases.last(5))
+        if directories.any?
+          directories_str = directories.map do |release|
+            "#{backup_dir}#{release}"
+          end.join(" ")
+          execute :rm, "-rf", directories_str
+        else
+          info "No se borra ningún dump"
+        end
       end
     end
   end
@@ -219,7 +270,9 @@ namespace :drupal do
     task :remote_import do
       on roles(:app) do
         within release_path.join(fetch(:app_path)) do
-          execute :drush, 'config-import --source=../config/drupal -y'
+          if test "[ -d #{release_path}/config/drupal ]"
+            execute :drush, 'config-import --source=../config/drupal -y'
+          end
         end
       end
     end

@@ -25,7 +25,6 @@ server 'ip_or_domain.es', port: 22, user: 'deploy_user', roles: %w{app db web}
 set :deploy_to, 'path_in_the/server'
 set :branch, 'dev'
 
-
 # Configuration
 # =============
 # You can set any configuration variable like in config/deploy.rb

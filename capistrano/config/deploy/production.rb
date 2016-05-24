@@ -11,7 +11,6 @@ set :deploy_to, 'path_in_the/test/server'
 set :branch, 'test'
 
 
-
 # role-based syntax
 # ==================
 
