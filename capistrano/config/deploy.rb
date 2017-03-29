@@ -48,9 +48,9 @@ after 'deploy:reverted', 'drupal:revertdump'
 after 'deploy:updated', 'drupal:dump'
 after 'drupal:dump', 'drupal:config:remote_import'
 after 'deploy:cleanup', 'drupal:cleanup_dump'
-
 ##UNCOMMENT AFTER FIRST RELEASE
-#after 'drupal:config:remote_import', 'drupal:update:updatedb'
+#before 'drupal:config:remote_import', 'drupal:update:updatedb'
+
 
 namespace :deploy do
 
